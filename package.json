@@ -1,0 +1,23 @@
+{
+  "name": "ai-cockpit-hermes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "个人 AI 驾驶舱 - 以本地 Hermes Agent 为引擎的网页端工作辅助系统",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:bff dev:web",
+    "dev:bff": "npm run dev --workspace apps/bff",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web && npm run build --workspace apps/bff",
+    "start": "npm run start --workspace apps/bff",
+    "typecheck": "npm run typecheck --workspace apps/web && npm run typecheck --workspace apps/bff"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
