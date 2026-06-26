@@ -1,9 +1,10 @@
 node_modules/
+hermes-skills/cockpit-dashboard/
 dist/
-*.local
 .env
 .env.*
 !.env.example
+*.local
 .DS_Store
 *.log
 npm-debug.log*

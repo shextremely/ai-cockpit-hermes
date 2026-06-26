@@ -9,9 +9,10 @@ interface TfsItem {
   title: string;
   status: string;
   due: string;
+  type?: string;
 }
 interface DashboardData {
-  tfs?: { todo: number; bug: number; overdue: number; items: TfsItem[] };
+  tfs?: { todo: number; bug: number; pool: number; overdue: number; items: TfsItem[] };
   raw?: string;
 }
 
@@ -47,9 +48,10 @@ onMounted(load);
     <NGrid :cols="3" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
       <NGi span="3 m:1">
         <DashboardCard title="今日 TFS 概览" :loading="loading" @refresh="load">
-          <NSpace v-if="data?.tfs" justify="space-between">
+          <NSpace v-if="data?.tfs" justify="space-between" :wrap="true">
             <NStatistic label="待处理" :value="data.tfs.todo" />
             <NStatistic label="BUG" :value="data.tfs.bug" />
+            <NStatistic label="公共池" :value="data.tfs.pool" />
             <NStatistic label="超期" :value="data.tfs.overdue" />
           </NSpace>
           <NEmpty v-else description="暂无数据" />

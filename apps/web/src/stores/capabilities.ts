@@ -10,6 +10,7 @@ interface Capabilities {
 interface HealthResp {
   bff: string;
   hermes: unknown | null;
+  authOk?: boolean;
   error?: string;
 }
 
@@ -25,7 +26,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   async function refreshHealth(): Promise<void> {
     try {
       const h = await api.get<HealthResp>('/health');
-      online.value = Boolean(h.hermes);
+      online.value = Boolean(h.hermes) && h.authOk !== false;
     } catch {
       online.value = false;
     }

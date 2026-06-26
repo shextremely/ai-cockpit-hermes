@@ -1,40 +1,130 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { NCard, NGrid, NGi, NTag, NSpace, NText, NEmpty, NSpin } from 'naive-ui';
+import { h, onMounted, ref } from 'vue';
+import {
+  NCard,
+  NDataTable,
+  NButton,
+  NModal,
+  NInput,
+  NForm,
+  NFormItem,
+  NEmpty,
+  NSpin,
+  NText,
+  useMessage,
+  type DataTableColumns,
+} from 'naive-ui';
 import { api } from '@/api/client';
-import { useCapabilitiesStore } from '@/stores/capabilities';
+import { useChatStore } from '@/stores/chat';
 
-interface Skill {
+interface SkillRow {
   name: string;
-  description?: string;
-  category?: string;
-}
-interface Toolset {
-  name: string;
-  label?: string;
-  enabled?: boolean;
-  tools?: string[];
+  label: string;
+  description: string;
+  needInput: boolean;
+  inputLabel?: string;
+  inputPlaceholder?: string;
+  defaultMessage: string;
+  engine: 'claude' | 'hermes';
 }
 
-const caps = useCapabilitiesStore();
-const skills = ref<Skill[]>([]);
-const toolsets = ref<Toolset[]>([]);
+interface ListResp {
+  data?: SkillRow[];
+  path?: string;
+}
+
+const skills = ref<SkillRow[]>([]);
+const skillsPath = ref('');
 const loading = ref(false);
+const triggering = ref(false);
+const showInput = ref(false);
+const inputValue = ref('');
+const activeSkill = ref<SkillRow | null>(null);
+const chat = useChatStore();
+const message = useMessage();
+
+const columns: DataTableColumns<SkillRow> = [
+  { title: '技能', key: 'label', width: 160 },
+  { title: '标识', key: 'name', width: 220, ellipsis: { tooltip: true } },
+  {
+    title: '说明',
+    key: 'description',
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render(row) {
+      return h(
+        NButton,
+        {
+          size: 'small',
+          type: 'primary',
+          loading: triggering.value && activeSkill.value?.name === row.name,
+          onClick: (e: Event) => {
+            e.stopPropagation();
+            onTrigger(row);
+          },
+        },
+        () => '触发',
+      );
+    },
+  },
+];
 
 async function load(): Promise<void> {
   loading.value = true;
-  await caps.load();
   try {
-    skills.value = await api.get<Skill[]>('/skills');
-  } catch {
+    const raw = await api.get<ListResp>('/skills');
+    skills.value = raw.data ?? [];
+    skillsPath.value = raw.path ?? '';
+  } catch (e) {
     skills.value = [];
+    message.error('加载技能失败：' + (e as Error).message);
+  } finally {
+    loading.value = false;
   }
+}
+
+function onTrigger(row: SkillRow): void {
+  if (chat.sending) {
+    message.info('已有任务执行中，请稍候');
+    return;
+  }
+  activeSkill.value = row;
+  if (row.needInput) {
+    inputValue.value = '';
+    showInput.value = true;
+    return;
+  }
+  void runSkill(row);
+}
+
+async function confirmInput(): Promise<boolean> {
+  if (!activeSkill.value) return false;
+  const text = inputValue.value.trim();
+  if (!text) {
+    message.warning(`请填写${activeSkill.value.inputLabel ?? '参数'}`);
+    return false;
+  }
+  showInput.value = false;
+  await runSkill(activeSkill.value, text);
+  return true;
+}
+
+async function runSkill(row: SkillRow, input?: string): Promise<void> {
+  if (chat.sending) return;
+  const userMsg = row.defaultMessage.replace('{input}', input ?? '').trim();
+  triggering.value = true;
   try {
-    toolsets.value = await api.get<Toolset[]>('/toolsets');
-  } catch {
-    toolsets.value = [];
+    await chat.send(userMsg, { backend: row.engine, openDrawer: true });
+  } catch (e) {
+    message.error('触发失败：' + (e as Error).message);
+  } finally {
+    triggering.value = false;
+    activeSkill.value = null;
   }
-  loading.value = false;
 }
 
 onMounted(load);
@@ -44,47 +134,43 @@ onMounted(load);
   <div>
     <h2 style="margin-top: 0">能力面板</h2>
     <NSpin :show="loading">
-      <NGrid :cols="2" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
-        <NGi span="2 m:1">
-          <NCard title="特性(/v1/capabilities)" size="small">
-            <NSpace v-if="caps.caps?.features">
-              <NTag
-                v-for="(v, k) in caps.caps.features"
-                :key="k"
-                size="small"
-                :type="v ? 'success' : 'default'"
-              >
-                {{ k }}: {{ v ? '是' : '否' }}
-              </NTag>
-            </NSpace>
-            <NEmpty v-else description="未获取到能力信息" />
-          </NCard>
-        </NGi>
-        <NGi span="2 m:1">
-          <NCard title="工具集(/v1/toolsets)" size="small">
-            <NSpace v-if="toolsets.length" vertical>
-              <div v-for="t in toolsets" :key="t.name">
-                <NTag size="small" :type="t.enabled ? 'success' : 'default'">{{ t.label || t.name }}</NTag>
-                <NText depth="3" style="font-size: 12px; margin-left: 8px">
-                  {{ (t.tools || []).slice(0, 6).join(', ') }}
-                </NText>
-              </div>
-            </NSpace>
-            <NEmpty v-else description="无" />
-          </NCard>
-        </NGi>
-        <NGi span="2">
-          <NCard title="技能(/v1/skills)" size="small">
-            <NSpace v-if="skills.length" vertical>
-              <div v-for="s in skills" :key="s.name">
-                <NTag size="small" type="info">{{ s.name }}</NTag>
-                <NText depth="3" style="font-size: 12px; margin-left: 8px">{{ s.description }}</NText>
-              </div>
-            </NSpace>
-            <NEmpty v-else description="无" />
-          </NCard>
-        </NGi>
-      </NGrid>
+      <NCard title="技能" size="small">
+        <NText v-if="skillsPath" depth="3" style="display: block; font-size: 12px; margin-bottom: 12px">
+          来源：{{ skillsPath }}
+        </NText>
+        <NDataTable
+          v-if="skills.length"
+          :columns="columns"
+          :data="skills"
+          :bordered="false"
+          :row-key="(row: SkillRow) => row.name"
+          size="small"
+          :row-props="(row: SkillRow) => ({ style: 'cursor: pointer', onClick: () => onTrigger(row) })"
+        />
+        <NEmpty v-else description="无可用技能" />
+      </NCard>
     </NSpin>
+    <NText depth="3" style="display: block; margin-top: 12px; font-size: 12px">
+      点击行或「触发」按钮，将在对话抽屉中通过 Claude Code 加载对应技能并执行。
+    </NText>
+
+    <NModal
+      v-model:show="showInput"
+      preset="dialog"
+      :title="activeSkill ? `触发：${activeSkill.label}` : '触发技能'"
+      positive-text="开始"
+      negative-text="取消"
+      @positive-click="confirmInput"
+    >
+      <NForm v-if="activeSkill" label-placement="top">
+        <NFormItem :label="activeSkill.inputLabel ?? '参数'">
+          <NInput
+            v-model:value="inputValue"
+            :placeholder="activeSkill.inputPlaceholder"
+            @keydown.enter.prevent="confirmInput"
+          />
+        </NFormItem>
+      </NForm>
+    </NModal>
   </div>
 </template>

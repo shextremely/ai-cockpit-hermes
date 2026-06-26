@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '@/api/client';
 import { streamSse } from '@/api/sse';
+import { useUiStore } from '@/stores/ui';
 
 export interface ToolProgress {
   tool: string;
@@ -34,15 +35,23 @@ export const useChatStore = defineStore('chat', () => {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 
-  async function send(input: string): Promise<void> {
+  async function send(
+    input: string,
+    opts?: { instructions?: string; openDrawer?: boolean; backend?: 'claude' | 'hermes' },
+  ): Promise<void> {
     if (!input.trim() || sending.value) return;
+    if (opts?.openDrawer) useUiStore().openChat();
     sending.value = true;
     messages.value.push({ id: uid(), role: 'user', content: input, tools: [] });
     const assistant: ChatMessage = { id: uid(), role: 'assistant', content: '', tools: [], streaming: true };
     messages.value.push(assistant);
 
     try {
-      const run = await api.post<CreateRunResp>('/chat', { input });
+      const run = await api.post<CreateRunResp>('/chat', {
+        input,
+        ...(opts?.instructions ? { instructions: opts.instructions } : {}),
+        ...(opts?.backend ? { backend: opts.backend } : {}),
+      });
       const runId = run.run_id ?? run.id;
       if (!runId) throw new Error('未获得 run_id');
       currentRunId.value = runId;

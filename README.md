@@ -1,6 +1,16 @@
 # 个人 AI 驾驶舱（Hermes Cockpit）
 
-以本地 **Hermes Agent** 为统一 AI 引擎与工具编排中枢，前端用 **Vue 3** 构建「仪表盘 + 对话式驾驶舱」，通过轻量 **BFF** 安全代理 Hermes 的 OpenAI 兼容 API，辅助 TFS 研发、知识管理(Obsidian)、个人日程三大日常工作。
+采用**双引擎**架构：**Claude Code**（对话与技能执行主引擎，原生 `/技能` 体验）+ **Hermes Agent**（定时 Job、MCP 编排、代码修复时打开 Cursor）。前端用 **Vue 3** 构建「仪表盘 + 对话式驾驶舱」，通过轻量 **BFF** 统一代理两引擎，辅助 TFS 研发、知识管理(Obsidian)、个人日程三大日常工作。
+
+## 双引擎路由
+
+| 场景 | 引擎 | 说明 |
+| --- | --- | --- |
+| 通用对话 / 能力面板技能 | Claude Code | 经 `claude -p --output-format stream-json` 流式，技能走原生 `/slash` 命令 |
+| 代码修复 / 开发(含「修bug、报错、重构」等意图) | Hermes + Cursor | BFF 自动 `cursor <工程>` 打开，Hermes 负责定位与方案编排 |
+| 定时 Job / MCP 编排 | Hermes | 维持 Hermes 既有强项 |
+
+引擎可由 `CHAT_BACKEND` 设默认，或在 `/chat` 请求 `backend` 字段显式指定；命中代码修复意图会自动切到 Hermes 并打开 Cursor。
 
 ## 文档
 
@@ -63,4 +73,4 @@ e:/ai-cockpit-hermes/
 
 ## 技术栈
 
-Vue 3 · Vite · TypeScript · Pinia · Naive UI · Express · Hermes Agent · MCP
+Vue 3 · Vite · TypeScript · Pinia · Naive UI · Express · Claude Code CLI · Hermes Agent · MCP · Cursor CLI

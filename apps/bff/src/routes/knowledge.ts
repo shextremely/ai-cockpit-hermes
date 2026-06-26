@@ -1,51 +1,44 @@
 import { Router } from 'express';
-import { hermesJson } from '../hermes.js';
 import { config } from '../config.js';
+import { openVaultFile, resolveVaultFile } from '../knowledge-open.js';
+import { searchVault } from '../knowledge-search.js';
 
 export const knowledgeRouter = Router();
 
-interface ChatCompletion {
-  choices?: Array<{ message?: { content?: string } }>;
-}
-
-function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced ? fenced[1] : text).trim();
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start === -1 || end === -1) throw new Error('no json');
-  return JSON.parse(candidate.slice(start, end + 1));
-}
-
-/** 知识库语义检索:让 Hermes 调 Obsidian MCP 搜索 Vault */
-knowledgeRouter.post('/knowledge/search', async (req, res, next) => {
+/** 知识库检索：直接扫描本地 Obsidian Vault */
+knowledgeRouter.post('/knowledge/search', async (req, res) => {
+  const query = String((req.body as { query?: string })?.query ?? '').trim();
+  if (!query) {
+    res.status(400).json({ error: 'bad_request', message: 'query 必填' });
+    return;
+  }
+  const vault = config.obsidian.vaultPath;
+  if (!vault) {
+    res.status(503).json({ error: 'vault_not_configured', message: '未配置 OBSIDIAN_VAULT_PATH', results: [] });
+    return;
+  }
   try {
-    const query = String((req.body as { query?: string })?.query ?? '').trim();
-    if (!query) {
-      res.status(400).json({ error: 'bad_request', message: 'query 必填' });
+    const results = searchVault(query, vault);
+    res.json({ results, source: 'vault' });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: 'search_failed', message, results: [] });
+  }
+});
+
+/** 用 Typora 或系统默认程序打开 Vault 内笔记 */
+knowledgeRouter.post('/knowledge/open', async (req, res) => {
+  try {
+    const rel = String((req.body as { path?: string })?.path ?? '').trim();
+    if (!rel) {
+      res.status(400).json({ error: 'bad_request', message: 'path 必填' });
       return;
     }
-    const instruction = `你是知识库检索助手。请使用 Obsidian 工具在 Vault 中搜索与用户查询相关的笔记,\
-严格只返回 JSON(无 markdown):{ "results": [ { "title": "<标题>", "path": "<相对路径>", "excerpt": "<摘要>" } ] },最多 10 条。\
-若无法检索返回 { "results": [] }。`;
-    const completion = await hermesJson<ChatCompletion>('/v1/chat/completions', {
-      method: 'POST',
-      body: {
-        model: config.hermes.model,
-        messages: [
-          { role: 'system', content: instruction },
-          { role: 'user', content: query },
-        ],
-        stream: false,
-      },
-    });
-    const content = completion.choices?.[0]?.message?.content ?? '';
-    try {
-      res.json(extractJson(content));
-    } catch {
-      res.json({ results: [], raw: content });
-    }
+    const fullPath = resolveVaultFile(rel);
+    const opened = openVaultFile(fullPath);
+    res.json({ ok: true, opened, path: fullPath });
   } catch (e) {
-    next(e);
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(400).json({ error: 'open_failed', message });
   }
 });

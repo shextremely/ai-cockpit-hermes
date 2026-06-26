@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import {
   NLayout,
@@ -14,11 +14,12 @@ import {
 import HermesStatus from '@/components/HermesStatus.vue';
 import ChatDrawer from '@/components/ChatDrawer.vue';
 import { useCapabilitiesStore } from '@/stores/capabilities';
+import { useUiStore } from '@/stores/ui';
 
 const route = useRoute();
 const router = useRouter();
 const caps = useCapabilitiesStore();
-const chatOpen = ref(false);
+const ui = useUiStore();
 
 const menuOptions: MenuOption[] = [
   { label: '驾驶舱', key: 'dashboard' },
@@ -37,7 +38,7 @@ function onMenu(key: string): void {
 function onKeydown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    chatOpen.value = !chatOpen.value;
+    ui.chatOpen = !ui.chatOpen;
   }
 }
 
@@ -56,7 +57,7 @@ onMounted(() => {
       <div style="flex: 1" />
       <NSpace align="center">
         <HermesStatus />
-        <NButton type="primary" size="small" @click="chatOpen = true">
+        <NButton type="primary" size="small" @click="ui.openChat()">
           对话 (Ctrl/Cmd+K)
         </NButton>
       </NSpace>
@@ -71,5 +72,5 @@ onMounted(() => {
     </NLayout>
   </NLayout>
 
-  <ChatDrawer v-model:show="chatOpen" />
+  <ChatDrawer v-model:show="ui.chatOpen" />
 </template>
