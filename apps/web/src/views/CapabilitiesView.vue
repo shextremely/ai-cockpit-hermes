@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 import {
   NCard,
   NDataTable,
@@ -17,20 +17,40 @@ import {
 import { api } from '@/api/client';
 import { useChatStore } from '@/stores/chat';
 
+interface SkillInputField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  required?: boolean;
+}
+
 interface SkillRow {
   name: string;
   label: string;
   description: string;
   needInput: boolean;
+  inputType: 'none' | 'single' | 'trace';
+  inputFields?: SkillInputField[];
   inputLabel?: string;
   inputPlaceholder?: string;
   defaultMessage: string;
   engine: 'claude' | 'hermes';
+  triggerMode: 'chat' | 'cursor';
+  cursorRepo?: string;
 }
 
 interface ListResp {
   data?: SkillRow[];
   path?: string;
+}
+
+interface TriggerResp {
+  mode: 'chat' | 'cursor';
+  ok: boolean;
+  message: string;
+  engine?: 'claude' | 'hermes';
+  repo?: string;
+  hint?: string;
 }
 
 const skills = ref<SkillRow[]>([]);
@@ -39,9 +59,12 @@ const loading = ref(false);
 const triggering = ref(false);
 const showInput = ref(false);
 const inputValue = ref('');
+const traceInput = reactive<Record<string, string>>({});
 const activeSkill = ref<SkillRow | null>(null);
 const chat = useChatStore();
 const message = useMessage();
+
+const isTraceForm = computed(() => activeSkill.value?.inputType === 'trace');
 
 const columns: DataTableColumns<SkillRow> = [
   { title: '技能', key: 'label', width: 160 },
@@ -87,38 +110,86 @@ async function load(): Promise<void> {
   }
 }
 
+function resetForm(): void {
+  inputValue.value = '';
+  for (const key of Object.keys(traceInput)) {
+    delete traceInput[key];
+  }
+}
+
 function onTrigger(row: SkillRow): void {
-  if (chat.sending) {
+  if (triggering.value) {
+    message.info('已有任务执行中，请稍候');
+    return;
+  }
+  if (row.triggerMode === 'chat' && chat.sending) {
     message.info('已有任务执行中，请稍候');
     return;
   }
   activeSkill.value = row;
+  resetForm();
   if (row.needInput) {
-    inputValue.value = '';
+    if (row.inputType === 'trace' && row.inputFields) {
+      for (const field of row.inputFields) {
+        traceInput[field.key] = '';
+      }
+    }
     showInput.value = true;
     return;
   }
-  void runSkill(row);
+  void executeTrigger(row, {});
 }
 
-async function confirmInput(): Promise<boolean> {
-  if (!activeSkill.value) return false;
-  const text = inputValue.value.trim();
-  if (!text) {
-    message.warning(`请填写${activeSkill.value.inputLabel ?? '参数'}`);
+function collectInput(): Record<string, string> {
+  const row = activeSkill.value;
+  if (!row) return {};
+  if (row.inputType === 'trace') {
+    return { ...traceInput };
+  }
+  return { input: inputValue.value.trim() };
+}
+
+function validateLocalInput(): boolean {
+  const row = activeSkill.value;
+  if (!row?.needInput) return true;
+
+  if (row.inputType === 'trace' && row.inputFields) {
+    for (const field of row.inputFields) {
+      if (field.required && !traceInput[field.key]?.trim()) {
+        message.warning(`请填写${field.label}`);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (!inputValue.value.trim()) {
+    message.warning(`请填写${row.inputLabel ?? '参数'}`);
     return false;
   }
-  showInput.value = false;
-  await runSkill(activeSkill.value, text);
   return true;
 }
 
-async function runSkill(row: SkillRow, input?: string): Promise<void> {
-  if (chat.sending) return;
-  const userMsg = row.defaultMessage.replace('{input}', input ?? '').trim();
+async function confirmInput(): Promise<boolean> {
+  if (!activeSkill.value || !validateLocalInput()) return false;
+  showInput.value = false;
+  await executeTrigger(activeSkill.value, collectInput());
+  return true;
+}
+
+async function executeTrigger(row: SkillRow, input: Record<string, string>): Promise<void> {
   triggering.value = true;
   try {
-    await chat.send(userMsg, { backend: row.engine, openDrawer: true });
+    const result = await api.post<TriggerResp>('/skills/trigger', { name: row.name, input });
+    if (result.mode === 'cursor') {
+      message.success(result.hint ?? `已在 Cursor 打开 ${result.repo ?? ''}`);
+      return;
+    }
+    if (chat.sending) {
+      message.info('已有任务执行中，请稍候');
+      return;
+    }
+    await chat.send(result.message, { backend: result.engine ?? row.engine, openDrawer: true });
   } catch (e) {
     message.error('触发失败：' + (e as Error).message);
   } finally {
@@ -145,13 +216,12 @@ onMounted(load);
           :bordered="false"
           :row-key="(row: SkillRow) => row.name"
           size="small"
-          :row-props="(row: SkillRow) => ({ style: 'cursor: pointer', onClick: () => onTrigger(row) })"
         />
         <NEmpty v-else description="无可用技能" />
       </NCard>
     </NSpin>
     <NText depth="3" style="display: block; margin-top: 12px; font-size: 12px">
-      点击行或「触发」按钮，将在对话抽屉中通过 Claude Code 加载对应技能并执行。
+      点击「触发」按钮执行技能。部分技能会在 Cursor 中打开并新建 Agent 会话；其余在对话抽屉中执行。
     </NText>
 
     <NModal
@@ -163,7 +233,20 @@ onMounted(load);
       @positive-click="confirmInput"
     >
       <NForm v-if="activeSkill" label-placement="top">
-        <NFormItem :label="activeSkill.inputLabel ?? '参数'">
+        <template v-if="isTraceForm">
+          <NFormItem
+            v-for="field in activeSkill.inputFields"
+            :key="field.key"
+            :label="field.label + (field.required ? '' : '（可选）')"
+          >
+            <NInput
+              v-model:value="traceInput[field.key]"
+              :placeholder="field.placeholder"
+              @keydown.enter.prevent="confirmInput"
+            />
+          </NFormItem>
+        </template>
+        <NFormItem v-else :label="activeSkill.inputLabel ?? '参数'">
           <NInput
             v-model:value="inputValue"
             :placeholder="activeSkill.inputPlaceholder"

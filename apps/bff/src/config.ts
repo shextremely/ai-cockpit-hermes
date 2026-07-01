@@ -53,6 +53,8 @@ export const config = {
     bin: process.env.CURSOR_BIN ?? 'cursor',
     /** 代码修复默认打开的工程目录 */
     defaultRepo: process.env.CURSOR_DEFAULT_REPO ?? path.resolve(__dirname, '../../..'),
+    /** 能力面板技能在 Cursor 中执行时打开的工程目录 */
+    skillsRepo: process.env.CURSOR_SKILLS_REPO ?? 'E:\\winning-repos',
   },
   chat: {
     /** 默认对话引擎: claude | hermes */

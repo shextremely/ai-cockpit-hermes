@@ -24,6 +24,7 @@ const ui = useUiStore();
 const menuOptions: MenuOption[] = [
   { label: '驾驶舱', key: 'dashboard' },
   { label: 'TFS 工作台', key: 'tfs' },
+  { label: '事项管理', key: 'tasks' },
   { label: '知识库', key: 'knowledge' },
   { label: '日程待办', key: 'jobs' },
   { label: '能力面板', key: 'capabilities' },

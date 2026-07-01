@@ -11,6 +11,7 @@ import { runsRouter } from './routes/runs.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { jobsRouter } from './routes/jobs.js';
 import { knowledgeRouter } from './routes/knowledge.js';
+import { tasksRouter } from './routes/tasks.js';
 
 const app = express();
 
@@ -23,7 +24,7 @@ if (config.bff.allowOrigin) {
   );
 }
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 
 // API 子路由统一挂在 /api,并经可选 BFF 鉴权
 const api = express.Router();
@@ -34,6 +35,7 @@ api.use(runsRouter);
 api.use(dashboardRouter);
 api.use(jobsRouter);
 api.use(knowledgeRouter);
+api.use(tasksRouter);
 app.use('/api', api);
 
 // 生产:托管前端构建产物(同源部署,免 CORS)
