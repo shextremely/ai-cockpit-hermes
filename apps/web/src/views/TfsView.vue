@@ -12,6 +12,7 @@ import {
   NEmpty,
   NSpin,
   NButton,
+  NStatistic,
   useMessage,
 } from 'naive-ui';
 import { api } from '@/api/client';
@@ -29,9 +30,14 @@ interface TfsItem {
 
 interface DashboardData {
   tfs?: {
+    todo?: number;
+    bug?: number;
+    pool?: number;
+    overdue?: number;
     requirements?: TfsItem[];
     poolItems?: TfsItem[];
     bugs?: TfsItem[];
+    inProgress?: TfsItem[];
   };
 }
 
@@ -59,6 +65,10 @@ async function load(): Promise<void> {
 
 function listFor(key: (typeof columns)[number]['key']): TfsItem[] {
   return data.value?.[key] ?? [];
+}
+
+function countFor(key: (typeof columns)[number]['key']): number {
+  return listFor(key).length;
 }
 
 async function assignPool(): Promise<void> {
@@ -92,11 +102,37 @@ onMounted(load);
 
 <template>
   <div>
-    <h2 style="margin-top: 0">TFS 研发工作台</h2>
+    <NSpace justify="space-between" align="center" style="margin-bottom: 12px">
+      <h2 style="margin: 0">TFS 研发工作台</h2>
+      <NButton text size="small" :loading="loading" @click="load">刷新</NButton>
+    </NSpace>
     <NSpin :show="loading">
+      <NCard size="small" style="margin-bottom: 16px">
+        <NGrid :cols="5" :x-gap="12" :y-gap="8" responsive="screen" item-responsive>
+          <NGi span="5 s:2 m:1">
+            <NStatistic label="我的需求" :value="countFor('requirements')" />
+          </NGi>
+          <NGi span="5 s:2 m:1">
+            <NStatistic label="公共池" :value="countFor('poolItems')" />
+          </NGi>
+          <NGi span="5 s:2 m:1">
+            <NStatistic label="BUG" :value="countFor('bugs')" />
+          </NGi>
+          <NGi span="5 s:2 m:1">
+            <NStatistic label="进行中" :value="data?.inProgress?.length ?? 0" />
+          </NGi>
+          <NGi span="5 s:2 m:1">
+            <NStatistic label="超期" :value="data?.overdue ?? 0">
+              <template v-if="(data?.overdue ?? 0) > 0" #prefix>
+                <span style="color: #d03050">⚠ </span>
+              </template>
+            </NStatistic>
+          </NGi>
+        </NGrid>
+      </NCard>
       <NGrid :cols="3" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
         <NGi v-for="col in columns" :key="col.key" span="3 m:1">
-          <NCard :title="col.title" size="small">
+          <NCard :title="`${col.title} · ${countFor(col.key)}`" size="small">
             <template v-if="col.key === 'poolItems'" #header-extra>
               <NButton
                 size="tiny"

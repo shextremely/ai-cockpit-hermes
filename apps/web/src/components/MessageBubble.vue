@@ -10,6 +10,7 @@ const props = defineProps<{ message: ChatMessage }>();
 const md = new MarkdownIt({ linkify: true, breaks: true });
 const html = computed(() => md.render(props.message.content || ''));
 const isUser = computed(() => props.message.role === 'user');
+const toolCount = computed(() => props.message.tools.length);
 </script>
 
 <template>
@@ -22,9 +23,9 @@ const isUser = computed(() => props.message.role === 'user');
         background: isUser ? 'var(--n-color-primary, #2a6df4)' : 'rgba(255,255,255,0.06)',
       }"
     >
-      <ToolProgress v-if="!isUser" :tools="message.tools" />
+      <ToolProgress v-if="!isUser && toolCount" :tools="message.tools" :streaming="message.streaming" />
       <div class="markdown-body" v-html="html" />
-      <NSpin v-if="message.streaming && !message.content" size="small" />
+      <NSpin v-if="message.streaming && !message.content && !toolCount" size="small" />
     </div>
   </div>
 </template>

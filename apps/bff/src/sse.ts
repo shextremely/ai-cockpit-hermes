@@ -36,4 +36,5 @@ export async function pipeUpstreamSse(upstream: Response, res: ExpressResponse):
 /** 发送单条 SSE 事件 */
 export function sendSse(res: ExpressResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  (res as unknown as { flush?: () => void }).flush?.();
 }

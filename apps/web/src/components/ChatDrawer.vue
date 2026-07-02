@@ -19,10 +19,10 @@ async function onSend(): Promise<void> {
 }
 
 watch(
-  () => chat.messages.length,
+  () => chat.messages.map((m) => `${m.id}:${m.rev ?? 0}:${m.content.length}`).join('|'),
   async () => {
     await nextTick();
-    scrollRef.value?.scrollTo({ top: 999999, behavior: 'smooth' });
+    scrollRef.value?.scrollTo({ top: 999999, behavior: chat.sending ? 'auto' : 'smooth' });
   },
 );
 </script>
@@ -32,13 +32,14 @@ watch(
     :show="show"
     :width="460"
     placement="right"
+    display-directive="show"
     @update:show="(v: boolean) => emit('update:show', v)"
   >
     <NDrawerContent title="统一对话" closable>
       <div style="display: flex; flex-direction: column; height: 100%">
         <NScrollbar ref="scrollRef" style="flex: 1">
           <NEmpty v-if="!chat.messages.length" description="向 Hermes 发起对话" style="margin-top: 40px" />
-          <MessageBubble v-for="m in chat.messages" :key="m.id" :message="m" />
+          <MessageBubble v-for="m in chat.messages" :key="`${m.id}-${m.rev ?? 0}`" :message="m" />
         </NScrollbar>
 
         <ApprovalDialog />

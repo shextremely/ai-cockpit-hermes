@@ -16,6 +16,8 @@ export interface ChatMessage {
   content: string;
   tools: ToolProgress[];
   streaming?: boolean;
+  /** 流式更新序号，用于驱动子组件重渲染 */
+  rev?: number;
 }
 
 interface CreateRunResp {
@@ -35,6 +37,30 @@ export const useChatStore = defineStore('chat', () => {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 
+  function patchMessage(id: string, updater: (m: ChatMessage) => Partial<ChatMessage>): void {
+    const idx = messages.value.findIndex((m) => m.id === id);
+    if (idx < 0) return;
+    const cur = messages.value[idx];
+    messages.value[idx] = {
+      ...cur,
+      ...updater(cur),
+      rev: (cur.rev ?? 0) + 1,
+    };
+  }
+
+  function appendAssistantContent(id: string, delta: string): void {
+    if (!delta) return;
+    patchMessage(id, (m) => ({ content: m.content + delta }));
+  }
+
+  function pushAssistantTool(id: string, tool: ToolProgress): void {
+    patchMessage(id, (m) => ({ tools: [...m.tools, tool] }));
+  }
+
+  function setAssistantStreaming(id: string, streaming: boolean): void {
+    patchMessage(id, () => ({ streaming }));
+  }
+
   async function send(
     input: string,
     opts?: { instructions?: string; openDrawer?: boolean; backend?: 'claude' | 'hermes' },
@@ -43,8 +69,8 @@ export const useChatStore = defineStore('chat', () => {
     if (opts?.openDrawer) useUiStore().openChat();
     sending.value = true;
     messages.value.push({ id: uid(), role: 'user', content: input, tools: [] });
-    const assistant: ChatMessage = { id: uid(), role: 'assistant', content: '', tools: [], streaming: true };
-    messages.value.push(assistant);
+    const assistantId = uid();
+    messages.value.push({ id: assistantId, role: 'assistant', content: '', tools: [], streaming: true });
 
     try {
       const run = await api.post<CreateRunResp>('/chat', {
@@ -59,35 +85,45 @@ export const useChatStore = defineStore('chat', () => {
 
       await streamSse(
         `${api.base}/runs/${encodeURIComponent(runId)}/events`,
-        (e) => handleEvent(e, assistant, runId),
+        (e) => handleEvent(e, assistantId, runId),
         { signal: abort.signal },
       );
     } catch (err) {
-      assistant.content += `\n\n> [错误] ${(err as Error).message}`;
+      appendAssistantContent(assistantId, `\n\n> [错误] ${(err as Error).message}`);
     } finally {
-      assistant.streaming = false;
+      setAssistantStreaming(assistantId, false);
       sending.value = false;
       currentRunId.value = null;
       abort = null;
     }
   }
 
-  function handleEvent(e: { event: string; data: string }, assistant: ChatMessage, runId: string): void {
+  function handleEvent(e: { event: string; data: string }, assistantId: string, runId: string): void {
     let payload: Record<string, unknown> = {};
     try {
       payload = JSON.parse(e.data) as Record<string, unknown>;
     } catch {
       // 非 JSON data,直接当文本增量
-      if (e.data && e.data !== '[DONE]') assistant.content += e.data;
+      if (e.data && e.data !== '[DONE]') appendAssistantContent(assistantId, e.data);
       return;
     }
 
     if (e.event === 'hermes.tool.progress' || e.event === 'tool.started') {
-      assistant.tools.push({
+      pushAssistantTool(assistantId, {
         tool: String(payload.tool ?? payload.name ?? '工具'),
         detail: typeof payload.detail === 'string' ? payload.detail : undefined,
         at: Date.now(),
       });
+      return;
+    }
+
+    if (e.event === 'error') {
+      const errText = typeof payload.message === 'string' ? payload.message : '执行出错';
+      appendAssistantContent(assistantId, `\n\n> [错误] ${errText}`);
+      return;
+    }
+
+    if (e.event === 'done') {
       return;
     }
 
@@ -98,7 +134,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // token / 文本增量:兼容多种字段
     const delta = extractDelta(payload);
-    if (delta) assistant.content += delta;
+    if (delta) appendAssistantContent(assistantId, delta);
   }
 
   function extractDelta(p: Record<string, unknown>): string {
